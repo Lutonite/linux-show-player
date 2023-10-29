@@ -16,7 +16,10 @@
 # along with Linux Show Player.  If not, see <http://www.gnu.org/licenses/>.
 
 from lisp.core.model import Model
+from lisp.core.signal import Signal
 from lisp.cues.cue import Cue, CueAction
+
+evtypes = ['interrupted', 'started', 'stopped', 'paused', 'error', 'end']
 
 
 class CueModel(Model):
@@ -29,12 +32,15 @@ class CueModel(Model):
     def __init__(self):
         super().__init__()
         self.__cues = {}
+        self.status_changed = Signal()
 
     def add(self, cue):
         if cue.id in self.__cues:
             raise ValueError("the cue is already in the model")
 
         self.__cues[cue.id] = cue
+        self._hook_events(cue)
+        self.status_changed.emit(cue)
         self.item_added.emit(cue)
 
     def remove(self, cue):
@@ -50,6 +56,7 @@ class CueModel(Model):
         elif CueAction.Stop in cue.CueActions:
             cue.stop()
 
+        self._unhook_events(cue)
         self.item_removed.emit(cue)
 
         return cue
@@ -87,3 +94,14 @@ class CueModel(Model):
 
     def __contains__(self, cue):
         return cue.id in self.__cues
+
+    def _proxy_status_event(self, cue):
+        self.status_changed.emit(cue)
+
+    def _hook_events(self, cue):
+        for evtype in evtypes:
+            getattr(cue, evtype).connect(self._proxy_status_event)
+
+    def _unhook_events(self, cue):
+        for evtype in evtypes:
+            getattr(cue, evtype).disconnect(self._proxy_status_event)
