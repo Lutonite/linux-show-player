@@ -214,6 +214,11 @@ class CartLayout(CueLayout):
             if isinstance(cue, cue_type):
                 yield cue
 
+    def cues_at_column(self, column, cue_type=Cue):
+        for cue in self._cart_model:
+            if isinstance(cue, cue_type) and cue.index % self.__columns == column:
+                yield cue
+
     def selected_cues(self, cue_type=Cue):
         for widget in self._widgets():
             if widget.selected and isinstance(widget.cue, cue_type):
@@ -232,6 +237,16 @@ class CartLayout(CueLayout):
     def invert_selection(self):
         for widget in self._widgets():
             widget.selected = not widget.selected
+
+    def select_next_page(self):
+        current_index = self._cart_view.currentIndex()
+        if current_index < self._cart_view.count() - 1:
+            self._cart_view.setCurrentIndex(current_index + 1)
+
+    def select_previous_page(self):
+        current_index = self._cart_view.currentIndex()
+        if current_index > 0:
+            self._cart_view.setCurrentIndex(current_index - 1)
 
     def add_pages(self):
         pages, accepted = QInputDialog.getInt(

@@ -18,7 +18,7 @@
 from functools import partial
 
 from PyQt5.QtCore import Qt, QEvent
-from PyQt5.QtGui import QKeySequence
+from PyQt5.QtGui import QKeyEvent, QKeySequence
 from PyQt5.QtWidgets import (
     QWidget,
     QLineEdit,
@@ -41,7 +41,7 @@ KEYS_FILTER = {
 }
 
 
-def keyEventKeySequence(keyEvent) -> QKeySequence:
+def keyEventKeySequence(keyEvent: QKeyEvent) -> QKeySequence:
     key = keyEvent.key()
     if key not in KEYS_FILTER:
         modifiers = keyEvent.modifiers()
