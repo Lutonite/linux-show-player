@@ -30,15 +30,15 @@ from lisp.core.util import EqEnum, typename
 class CueState:
     Invalid = 0
 
-    Error = 1
-    Stop = 2
-    Running = 4
-    Pause = 8
+    Error = 1 << 0
+    Stop = 1 << 1
+    Running = 1 << 2
+    Pause = 1 << 3
 
-    PreWait = 16
-    PostWait = 32
-    PreWait_Pause = 64
-    PostWait_Pause = 128
+    PreWait = 1 << 4
+    PostWait = 1 << 5
+    PreWait_Pause = 1 << 6
+    PostWait_Pause = 1 << 8
 
     IsRunning = Running | PreWait | PostWait
     IsPaused = Pause | PreWait_Pause | PostWait_Pause

@@ -30,13 +30,18 @@ from PyQt5.QtWidgets import (
     QLabel,
     QHBoxLayout,
 )
+from mido.messages import Message
 
 from lisp.application import Application
-from lisp.cues.cue import CueState
-from lisp.plugins import get_plugin
+from lisp.backend.audio_utils import slider_to_fader
 from lisp.core.plugin import PluginNotLoadedError
+from lisp.cues.cue import Cue, CueState
+from lisp.cues.media_cue import MediaCue
+from lisp.plugins import get_plugin
+from lisp.plugins.cart_layout.layout import CartLayout
 from lisp.plugins.controller.common import LayoutAction, tr_layout_action
-from lisp.plugins.controller.devices.apc_midi_mk1 import ApcMidiMk1Color, map_color
+from lisp.plugins.controller.devices.apc_midi_mk1 import ApcButtonRange, ApcPushButtonColor, note_in_range, \
+    ApcSideButtonColor
 from lisp.plugins.controller.protocol import Protocol
 from lisp.plugins.midi.midi_utils import (
     MIDI_MSGS_NAME,
@@ -56,8 +61,6 @@ from lisp.ui.qdelegates import (
 from lisp.ui.qmodels import SimpleTableModel
 from lisp.ui.settings.pages import CuePageMixin, SettingsPage
 from lisp.ui.ui_utils import translate
-
-from mido.messages import Message
 
 logger = logging.getLogger(__name__)
 
@@ -326,6 +329,12 @@ class MidiView(QTableView):
                 )
 
 
+previous_page_button = ApcButtonRange.BottomSide[0] + 2
+next_page_button = ApcButtonRange.BottomSide[0] + 3
+stop_all_button = ApcButtonRange.RightSide[1]
+shift_button = ApcButtonRange.Shift[0]
+
+
 class Midi(Protocol):
     CueSettings = MidiCueSettings
     LayoutSettings = MidiLayoutSettings
@@ -334,31 +343,89 @@ class Midi(Protocol):
         super().__init__()
         # Install callback for new MIDI messages
         get_plugin("Midi").input.new_message.connect(self.__new_message)
-        self.__midi_output = get_plugin("Midi").output
+        self._midi_output = get_plugin("Midi").output
+        self._shift = False
 
     def init(self):
-        Application().cue_model.status_changed.connect(self.cue_status_changed)
+        Application().cue_model.status_changed.connect(self.__cue_status_changed)
 
     def reset(self):
-        Application().cue_model.status_changed.disconnect(self.cue_status_changed)
+        Application().cue_model.status_changed.disconnect(self.__cue_status_changed)
 
-    def __new_message(self, message):
+    def __new_message(self, message: Message):
+        # TODO: hack to support shift key on APC mini, I'd like to support this cleanly through device bindings
+        if not self._shift and getattr(message, "type") == "note_on" and getattr(message, "note") == shift_button:
+            self._enable_shift_mode()
+            return
+
+        if self._shift and getattr(message, "type") == "note_off" and getattr(message, "note") == shift_button:
+            self._disable_shift_mode()
+            return
+
+        if self._shift and getattr(message, "type") == "note_on":
+            note = getattr(message, "note")
+            if note == stop_all_button:
+                Application().layout.stop_all()
+                self._send_feedback(stop_all_button, ApcSideButtonColor.Blink)
+                return
+            elif note == previous_page_button:
+                if isinstance(Application().layout, CartLayout):
+                    Application().layout.select_previous_page()
+                return
+            elif note == next_page_button:
+                if isinstance(Application().layout, CartLayout):
+                    Application().layout.select_next_page()
+                return
+
+        if getattr(message, "type") == "control_change":
+            if getattr(message, "control") == ApcButtonRange.Faders[1]:
+                # TODO: master gain?
+                return
+
+            if isinstance(Application().layout, CartLayout):
+                column = getattr(message, "control") - ApcButtonRange.Faders[0]
+                for cue in Application().layout.cues_at_column(column, MediaCue):
+                    volume = cue.media.element("Volume")
+                    if volume is not None:
+                        volume.live_volume = getattr(message, "value") / 127
+
         if hasattr(message, "velocity"):
             message = message.copy(velocity=0)
 
         self.protocol_event.emit(str(message))
 
-    def cue_status_changed(self, cue):
+    def __cue_status_changed(self, cue: Cue):
         for key, _ in cue.controller.get('midi', []):
             note = midi_from_str(key).note
-            message = Message("note_on", channel=0, note=note, velocity=0)
+            if not note_in_range(note, ApcButtonRange.PushButton):
+                continue
 
             if cue.state & CueState.IsRunning:
-                message.velocity = map_color(note, ApcMidiMk1Color.Green)
-            elif cue.state & CueState.IsStopped:
-                message.velocity = map_color(note, ApcMidiMk1Color.Yellow)
+                self._send_feedback(note, ApcPushButtonColor.Green)
             elif cue.state & CueState.IsPaused:
-                message.velocity = map_color(note, ApcMidiMk1Color.Red)
+                self._send_feedback(note, ApcPushButtonColor.GreenBlink)
+            elif cue.state & CueState.IsStopped:
+                self._send_feedback(note, ApcPushButtonColor.Yellow)
 
-            if self.__midi_output.is_open():
-                self.__midi_output.send(message)
+    def _send_feedback(self, key, color):
+        message = Message("note_on", channel=0, note=key, velocity=color)
+        if self._midi_output.is_open():
+            self._midi_output.send(message)
+
+    def _enable_shift_mode(self):
+        if self._shift:
+            return
+
+        self._shift = True
+        self._send_feedback(ApcButtonRange.RightSide[1], ApcSideButtonColor.On)
+        self._send_feedback(previous_page_button, ApcSideButtonColor.On)
+        self._send_feedback(next_page_button, ApcSideButtonColor.On)
+
+    def _disable_shift_mode(self):
+        if not self._shift:
+            return
+
+        self._shift = False
+        self._send_feedback(ApcButtonRange.RightSide[1], ApcSideButtonColor.Off)
+        self._send_feedback(previous_page_button, ApcSideButtonColor.Off)
+        self._send_feedback(next_page_button, ApcSideButtonColor.Off)

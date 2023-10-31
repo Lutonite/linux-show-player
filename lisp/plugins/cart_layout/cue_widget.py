@@ -202,7 +202,7 @@ class CueWidget(QWidget):
             self._showVolume = visible
 
             if self._volumeElement is not None:
-                self._volumeElement.changed("volume").disconnect(
+                self._volumeElement.changed("live_volume").disconnect(
                     self.resetVolume
                 )
                 self._volumeElement = None
@@ -212,7 +212,7 @@ class CueWidget(QWidget):
                 self._volumeElement = self._cue.media.element("Volume")
                 if self._volumeElement is not None:
                     self.resetVolume()
-                    self._volumeElement.changed("volume").connect(
+                    self._volumeElement.changed("live_volume").connect(
                         self.resetVolume, Connection.QtQueued
                     )
 
@@ -228,7 +228,7 @@ class CueWidget(QWidget):
         if self._volumeElement is not None:
             self.volumeSlider.setValue(
                 round(
-                    fader_to_slider(self._volumeElement.volume)
+                    fader_to_slider(self._volumeElement.live_volume)
                     * CueWidget.SLIDER_RANGE
                 )
             )

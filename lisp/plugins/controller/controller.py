@@ -157,10 +157,11 @@ class Controller(Plugin):
         for protocol_class in protocols.Protocols:
             try:
                 protocol = protocol_class()
+                protocol_name = protocol_class.__name__.lower()
                 protocol.protocol_event.connect(self.perform_cue_action)
                 protocol.protocol_event.connect(self.perform_session_action)
 
-                self.__protocols[protocol_class.__name__.lower()] = protocol
+                self.__protocols[protocol_name] = protocol
             except Exception:
                 logger.warning(
                     translate(
